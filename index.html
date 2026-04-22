@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>전국 스포츠토토 &amp; 환급은행 지도</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+    <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+    <!-- QR 스캔 라이브러리 -->
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Malgun Gothic', sans-serif; overflow: hidden; }
+        #map { width: 100%; height: 100vh; background-color: #f0f0f0; }
+        
+        /* 버튼 그룹 */
+        .btn-group {
+            position: absolute; top: 70px; right: 10px; z-index: 2000;
+            display: flex; flex-direction: column; gap: 8px;
+        }
+        .location-btn {
+            background: #0052A4; color: white; padding: 12px 20px; 
+            border: none; border-radius: 25px; cursor: pointer; 
+            font-weight: bold; font-size: 14px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            transition: transform 0.15s, opacity 0.15s;
+        }
+        .location-btn:active { transform: scale(0.95); opacity: 0.85; }
+        .store-btn  { background: #28a745; }
+        .bank-btn   { background: #007bc4; }
+        .qr-btn     { background: linear-gradient(135deg, #e67e22, #f39c12); }
+
+        /* 마커 공통 */
+        .custom-pin {
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 50%; width: 26px; height: 26px;
+            color: white; font-size: 13px; border: 2px solid white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+        }
+        .pin-toto  { background: #0052A4; }
+        .pin-store { background: #28a745; }
+        .pin-bank  { background: #007bc4; }
+
+        /* 하단 슬라이더 */
+        #slider-container {
+            position: absolute; bottom: 20px; left: 0; width: 100%; height: 140px;
+            z-index: 1000; display: flex; overflow-x: auto; padding: 10px;
+            box-sizing: border-box; gap: 15px; scrollbar-width: none;
+        }
+        #slider-container::-webkit-scrollbar { display: none; }
+        .card {
+            flex: 0 0 200px; background: white; border-radius: 10px; padding: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2); cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+        .card:hover { transform: translateY(-3px); box-shadow: 0 8px 25px rgba(0,0,0,0.25); }
+        .card h4 { margin: 0 0 4px 0; font-size: 13px; color: #333; }
+        .card p  { margin: 0; font-size: 11px; color: #666; }
+        .card .distance { font-size: 11px; font-weight: bold; margin-top: 6px; }
+        .card .nav-row { display: flex; gap: 4px; margin-top: 8px; }
+        .nav-btn {
+            flex: 1; padding: 5px 2px; border: none; border-radius: 6px;
+            font-size: 10px; font-weight: bold; cursor: pointer;
+            transition: opacity 0.2s, transform 0.1s;
+            display: flex; align-items: center; justify-content: center; gap: 2px;
+        }
+        .nav-btn:hover { opacity: 0.85; }
+        .nav-btn:active { transform: scale(0.95); }
+        .nav-kakao  { background: #FEE500; color: #3C1E1E; }
+        .nav-naver  { background: #03C75A; color: #fff; }
+        .nav-google { background: #4285F4; color: #fff; }
+
+        /* ── QR 스캔 모달 ── */
+        #qr-modal {
+            display: none;
+            position: fixed; inset: 0; z-index: 9999;
+            background: rgba(0,0,0,0.85);
+            align-items: center; justify-content: center;
+            flex-direction: column;
+        }
+        #qr-modal.active { display: flex; }
+
+        #qr-box {
+            background: #1a1a2e;
+            border-radius: 20px;
+            padding: 24px;
+            width: min(90vw, 380px);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+            display: flex; flex-direction: column; align-items: center; gap: 16px;
+        }
+        #qr-box h2 {
+            margin: 0; color: #f39c12; font-size: 18px; text-align: center;
+        }
+        #qr-box p.qr-sub {
+            margin: 0; font-size: 13px; color: #aaa; text-align: center; line-height: 1.5;
+        }
+
+        /* 카메라 뷰파인더 */
+        #qr-viewport {
+            position: relative; width: 100%; aspect-ratio: 1;
+            border-radius: 14px; overflow: hidden; background: #000;
+        }
+        #qr-video {
+            width: 100%; height: 100%; object-fit: cover; display: block;
+        }
+        /* 스캔 애니메이션 라인 */
+        #scan-line {
+            position: absolute; left: 10%; width: 80%; height: 3px;
+            background: linear-gradient(90deg, transparent, #f39c12, transparent);
+            box-shadow: 0 0 8px #f39c12;
+            animation: scanMove 2s ease-in-out infinite;
+            border-radius: 2px;
+        }
+        @keyframes scanMove {
+            0%   { top: 10%; }
+            50%  { top: 85%; }
+            100% { top: 10%; }
+        }
+        /* 모서리 프레임 */
+        #qr-viewport::before, #qr-viewport::after,
+        .corner-br, .corner-bl {
+            content: ''; position: absolute; width: 28px; height: 28px;
+            border-color: #f39c12; border-style: solid; z-index: 2;
+        }
+        #qr-viewport::before { top: 10px; left: 10px; border-width: 3px 0 0 3px; border-radius: 4px 0 0 0; }
+        #qr-viewport::after  { top: 10px; right: 10px; border-width: 3px 3px 0 0; border-radius: 0 4px 0 0; }
+        .corner-br { bottom: 10px; right: 10px; border-width: 0 3px 3px 0; border-radius: 0 0 4px 0; }
+        .corner-bl { bottom: 10px; left: 10px; border-width: 0 0 3px 3px; border-radius: 0 0 0 4px; }
+
+        /* 상태 텍스트 */
+        #qr-status {
+            font-size: 14px; color: #eee; text-align: center;
+            min-height: 20px; font-weight: bold;
+        }
+        #qr-status.success { color: #2ecc71; }
+        #qr-status.error   { color: #e74c3c; }
+
+        /* 모달 버튼들 */
+        .qr-btn-row { display: flex; gap: 10px; width: 100%; }
+        .qr-close-btn, .qr-result-btn {
+            flex: 1; padding: 13px;
+            border: none; border-radius: 12px;
+            font-size: 14px; font-weight: bold; cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .qr-close-btn  { background: #444; color: #fff; }
+        .qr-result-btn { background: #f39c12; color: #fff; display: none; }
+        .qr-result-btn:hover { opacity: 0.85; }
+
+        /* hidden canvas (프레임 분석용) */
+        #qr-canvas { display: none; }
+    </style>
+</head>
+<body>
+
+    <div id="map"></div>
+
+    <div class="btn-group">
+        <button class="location-btn" onclick="findNearest('all')">📍 모든 판매점</button>
+        <button class="location-btn store-btn" onclick="findNearest('store')">🏪 편의점 찾기</button>
+        <button class="location-btn bank-btn" onclick="findNearest('bank')">🏦 환급 은행 찾기</button>
+        <button class="location-btn qr-btn" onclick="openQRScanner()">📷 당첨금 QR 조회</button>
+    </div>
+
+    <div id="slider-container"></div>
+
+    <!-- QR 스캔 모달 -->
+    <div id="qr-modal">
+        <div id="qr-box">
+            <h2>🎯 당첨금 QR 조회</h2>
+            <p class="qr-sub">스포츠토토 티켓의 QR코드를<br>카메라에 비춰주세요</p>
+
+            <div id="qr-viewport">
+                <video id="qr-video" autoplay playsinline muted></video>
+                <div id="scan-line"></div>
+                <div class="corner-br"></div>
+                <div class="corner-bl"></div>
+            </div>
+
+            <div id="qr-status">카메라를 초기화하는 중...</div>
+
+            <div class="qr-btn-row">
+                <button class="qr-close-btn"  onclick="closeQRScanner()">✕ 닫기</button>
+                <button class="qr-result-btn" id="qr-result-btn" onclick="openResult()">🏆 당첨 확인하기</button>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="qr-canvas"></canvas>
+
+    <script>
+        /* ═══════════════════════════
+           지도 & 마커 로직
+        ═══════════════════════════ */
+        var map, markers;
+        var allShops = [], allBanks = [];
+        var currentFilter = 'all';
+        var myLatLng = null; // 내 현재 위치 저장
+
+        window.onload = function() {
+            map = L.map('map', { preferCanvas: true }).setView([37.5665, 126.9780], 11);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+            markers = L.markerClusterGroup();
+
+            L.Control.geocoder({ defaultMarkGeocode: false, placeholder: "동네/주소 검색" })
+                .on('markgeocode', e => map.setView(e.geocode.center, 15)).addTo(map);
+
+            map.on('locationfound', onLocationFound);
+            loadTotoDB();
+            loadBankDB();
+        };
+
+        async function loadTotoDB() {
+            try {
+                const response = await fetch('toto.geojson');
+                const data = await response.json();
+                data.features.forEach(item => {
+                    const prop = item.properties;
+                    const lat = parseFloat(prop.위도), lng = parseFloat(prop.경도);
+                    if (!isNaN(lat) && !isNaN(lng)) {
+                        const name = prop.판매점 || "스포츠토토";
+                        const isStore = name.includes('편의점') || name.includes('CU') || name.includes('GS25') || name.includes('세븐일레븐');
+                        const icon = L.divIcon({
+                            html: `<div class="custom-pin ${isStore ? 'pin-store' : 'pin-toto'}">${isStore ? '🏪' : '⚽'}</div>`,
+                            className: '', iconSize: [34,34], iconAnchor: [17,17]
+                        });
+                        const marker = L.marker([lat,lng], {icon});
+                        marker.bindPopup(`<b>${isStore?'🏪':'⚽'} ${name}</b><br>${prop.주소}`);
+                        markers.addLayer(marker);
+                        allShops.push({ name, addr: prop.주소, isStore, latlng: L.latLng(lat,lng), marker });
+                    }
+                });
+                map.addLayer(markers);
+            } catch(e) { console.error("판매점 로드 오류:", e); }
+        }
+
+        async function loadBankDB() {
+            try {
+                const response = await fetch('woori.geojson');
+                const data = await response.json();
+                data.features.forEach(item => {
+                    const prop = item.properties;
+                    const lat = parseFloat(prop.위도), lng = parseFloat(prop.경도);
+                    if (!isNaN(lat) && !isNaN(lng)) {
+                        const name = prop.지점명 || "우리은행";
+                        const icon = L.divIcon({
+                            html: `<div class="custom-pin pin-bank">🏦</div>`,
+                            className: '', iconSize: [34,34], iconAnchor: [17,17]
+                        });
+                        const marker = L.marker([lat,lng], {icon});
+                        marker.bindPopup(`<b>🏦 ${name}</b><br>스포츠토토 환급 가능 지점<br>${prop.주소||''}`);
+                        markers.addLayer(marker);
+                        allBanks.push({ name, addr: prop.주소||"", isBank:true, latlng: L.latLng(lat,lng), marker });
+                    }
+                });
+            } catch(e) { console.error("은행 로드 오류:", e); }
+        }
+
+        function findNearest(type) { currentFilter = type; map.locate({setView:true, maxZoom:15}); }
+
+        function onLocationFound(e) {
+            myLatLng = e.latlng; // 내 위치 전역 저장
+            const myLoc = e.latlng;
+            let targets = currentFilter === 'bank' ? allBanks
+                        : currentFilter === 'store' ? allShops.filter(s => s.isStore)
+                        : allShops;
+
+            targets.forEach(t => t.distance = myLoc.distanceTo(t.latlng));
+            const closest = [...targets].sort((a,b) => a.distance - b.distance).slice(0,5);
+
+            const container = document.getElementById('slider-container');
+            container.innerHTML = '';
+            closest.forEach(item => {
+                const km = (item.distance/1000).toFixed(2);
+                const color = item.isBank ? '#007bc4' : '#0052A4';
+                const ico = item.isBank ? '🏦' : (item.isStore ? '🏪' : '⚽');
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.innerHTML = `
+                    <h4>${ico} ${item.name}</h4>
+                    <p>${item.addr}</p>
+                    <div class="distance" style="color:${color}">📍 약 ${km}km 거리에 있음</div>
+                    <div class="nav-row">
+                        <button class="nav-btn nav-kakao"  onclick="event.stopPropagation(); openNav('kakao',  ${item.latlng.lat}, ${item.latlng.lng}, '${item.name.replace(/'/g,"\\'")}')">🗺️ 카카오</button>
+                        <button class="nav-btn nav-naver"  onclick="event.stopPropagation(); openNav('naver',  ${item.latlng.lat}, ${item.latlng.lng}, '${item.name.replace(/'/g,"\\'")}')">🗺️ 네이버</button>
+                        <button class="nav-btn nav-google" onclick="event.stopPropagation(); openNav('google', ${item.latlng.lat}, ${item.latlng.lng}, '${item.name.replace(/'/g,"\\'")}')">🗺️ 구글</button>
+                    </div>
+                `;
+                card.onclick = () => { map.setView(item.latlng, 17); item.marker.openPopup(); };
+                container.appendChild(card);
+            });
+            L.circle(myLoc, {radius:50, color:'#0052A4'}).addTo(map);
+        }
+
+        /* ═══════════════════════════
+           길찾기 연동
+        ═══════════════════════════ */
+        function openNav(provider, destLat, destLng, destName) {
+            const eLat = destLat, eLng = destLng;
+            const eName = encodeURIComponent(destName);
+
+            // 내 위치가 있으면 출발지로 사용
+            const sLat = myLatLng ? myLatLng.lat : '';
+            const sLng = myLatLng ? myLatLng.lng : '';
+
+            let url = '';
+            if (provider === 'kakao') {
+                // 카카오맵 길찾기 (모바일 앱 우선, 미설치 시 웹)
+                const kakaoWeb = `https://map.kakao.com/link/to/${eName},${eLat},${eLng}`;
+                // 모바일 앱 딥링크 시도 후 폴백
+                const kakaoApp = `kakaomap://route?ep=${eLat},${eLng}&en=${eName}&ids=&idf=`;
+                if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+                    // 앱 딥링크 시도 (미설치 시 자동 웹으로 이동)
+                    const fallbackTimer = setTimeout(() => { window.open(kakaoWeb, '_blank'); }, 1200);
+                    window.location.href = kakaoApp;
+                    // 앱이 열리면 타이머 취소 (앱이 열리면 blur 이벤트 발생)
+                    window.addEventListener('blur', () => clearTimeout(fallbackTimer), { once: true });
+                    return;
+                }
+                url = kakaoWeb;
+            } else if (provider === 'naver') {
+                // 네이버 지도 길찾기
+                let naverUrl;
+                if (sLat && sLng) {
+                    naverUrl = `https://map.naver.com/v5/directions/${sLng},${sLat},,/${eLng},${eLat},${eName}/walk?c=15,0,0,0,dh`;
+                } else {
+                    naverUrl = `https://map.naver.com/v5/search/${eName}?c=${eLng},${eLat},15,0,0,0,dh`;
+                }
+                // 모바일 앱 딥링크
+                if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+                    const appUrl = `nmap://route/walk?dlat=${eLat}&dlng=${eLng}&dname=${eName}`
+                                 + (sLat ? `&slat=${sLat}&slng=${sLng}&sname=현재위치` : '');
+                    const fallbackTimer = setTimeout(() => { window.open(naverUrl, '_blank'); }, 1200);
+                    window.location.href = appUrl;
+                    window.addEventListener('blur', () => clearTimeout(fallbackTimer), { once: true });
+                    return;
+                }
+                url = naverUrl;
+            } else if (provider === 'google') {
+                if (sLat && sLng) {
+                    url = `https://www.google.com/maps/dir/${sLat},${sLng}/${eLat},${eLng}/`;
+                } else {
+                    url = `https://www.google.com/maps/search/?api=1&query=${eLat},${eLng}`;
+                }
+            }
+            if (url) window.open(url, '_blank');
+        }
+
+
+        /* ═══════════════════════════
+           QR 스캔 기능
+        ═══════════════════════════ */
+        let qrStream = null;
+        let qrAnimFrame = null;
+        let qrResultURL = null;
+
+        function openQRScanner() {
+            document.getElementById('qr-modal').classList.add('active');
+            document.getElementById('qr-result-btn').style.display = 'none';
+            qrResultURL = null;
+            startCamera();
+        }
+
+        function closeQRScanner() {
+            stopCamera();
+            document.getElementById('qr-modal').classList.remove('active');
+            setStatus('카메라를 초기화하는 중...', '');
+        }
+
+        async function startCamera() {
+            setStatus('카메라 권한을 요청하는 중...', '');
+            try {
+                // 후면 카메라 우선 시도
+                qrStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 640 } }
+                });
+                const video = document.getElementById('qr-video');
+                video.srcObject = qrStream;
+                video.onloadedmetadata = () => {
+                    video.play();
+                    setStatus('QR코드를 화면 중앙에 맞춰주세요', '');
+                    requestAnimationFrame(scanFrame);
+                };
+            } catch(err) {
+                setStatus('카메라 실행 실패: ' + err.message, 'error');
+            }
+        }
+
+        function stopCamera() {
+            if (qrAnimFrame) { cancelAnimationFrame(qrAnimFrame); qrAnimFrame = null; }
+            if (qrStream) { qrStream.getTracks().forEach(t => t.stop()); qrStream = null; }
+            const video = document.getElementById('qr-video');
+            video.srcObject = null;
+        }
+
+        function scanFrame() {
+            const video  = document.getElementById('qr-video');
+            const canvas = document.getElementById('qr-canvas');
+
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                canvas.width  = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                    inversionAttempts: 'dontInvert'
+                });
+
+                if (code) {
+                    handleQRResult(code.data);
+                    return; // 성공하면 루프 중단
+                }
+            }
+            qrAnimFrame = requestAnimationFrame(scanFrame);
+        }
+
+        function handleQRResult(rawText) {
+            stopCamera();
+
+            // 스포츠토토 QR: betman.co.kr 관련 URL 또는 문자열 포함 여부 확인
+            let url = null;
+            if (rawText.startsWith('http')) {
+                url = rawText; // QR 자체가 URL인 경우
+            } else {
+                // QR 값이 코드 문자열인 경우 betman 당첨 조회 URL로 직접 연결
+                url = `https://m.sports2.co.kr/ticket/qrCheck.do?barcode=${encodeURIComponent(rawText)}`;
+            }
+
+            qrResultURL = url;
+
+            setStatus('✅ QR코드 인식 완료! 당첨 결과를 확인하세요.', 'success');
+            const btn = document.getElementById('qr-result-btn');
+            btn.style.display = 'block';
+
+            // QR코드 값 일부 표시
+            const preview = rawText.length > 40 ? rawText.substring(0,40) + '…' : rawText;
+            document.querySelector('.qr-sub').textContent = `인식된 코드: ${preview}`;
+        }
+
+        function openResult() {
+            if (qrResultURL) {
+                window.open(qrResultURL, '_blank');
+                closeQRScanner();
+            }
+        }
+
+        function setStatus(msg, type) {
+            const el = document.getElementById('qr-status');
+            el.textContent = msg;
+            el.className = type || '';
+        }
+    </script>
+</body>
+</html>
